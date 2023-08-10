@@ -1,2 +1,13 @@
 This is a learning project to implement a PNG image loader. Intended to use
 with OpenGL for loading in object textures.
+
+NOTES FOR THINGS I"VE LEARNED
+- C++ binary file I/O, how to read in data from a file without needing it to
+  be in ASCII. Here I used fstream, passed it the std::ios::binary flag, and
+read the .get() output into an unsigned char in order to grab the data byte by
+byte.
+
+- <sys/stat.h>, this is part of the C standard. It's a header file that
+  declares some functions which are implemented on a kernel level. For this
+code I'm using it to get the size in bytes of the file before grabbing its
+characters so that i can statically allocate the memory. 
