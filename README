@@ -10,4 +10,8 @@ byte.
 - <sys/stat.h>, this is part of the C standard. It's a header file that
   declares some functions which are implemented on a kernel level. For this
 code I'm using it to get the size in bytes of the file before grabbing its
-characters so that i can statically allocate the memory. 
+characters so that i can statically allocate the memory.
+
+- Bitwise goodness, found a way to convert bytes extracted from file into an
+  int by using bitwise operators | and <<. we "flash" the byte onto the bottom
+8 bits and then shift em up so we can flash another. 
