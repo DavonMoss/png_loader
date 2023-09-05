@@ -3,13 +3,16 @@
 
 static const int CHUNK_SIZE_BYTES = 4;  // number of bytes used to represent the size of a chunk
 static const int CHUNK_NAME_BYTES = 4;  // number of bytes used to represent the name of a chunk
+static const int CHUNK_CRC_LENGTH = 4;  // length of CRC suffix for each chunk
+
+static const std::string IEND = "IEND";
 
 /*
  * Struct to describe the type of chunk we're dealing with.
  */
 struct chunk_type {
     unsigned long int size;
-    unsigned char name[CHUNK_NAME_BYTES];
+    std::string name;
 };
 
 /*
@@ -37,10 +40,10 @@ unsigned long int hex_bytes_to_int(unsigned char* bytes) {
 /*
  * VERIFY PNG SIGNATURE
  *
- * Checks the first 8 bytes of a file against the expected PNG signature.
+ * Checks the first 8 bytes of a file against the expechunked PNG signature.
  *
  * PARAMS:
- * std::ifstream* file 	- Pointer to Input File Stream object from C++ fstream. Requires file to have already been opened.
+ * std::ifstream* file 	- Pointer to Input File Stream objechunk from C++ fstream. Requires file to have already been opened.
  * 
  * RETURNS (bool):
  * TRUE if the signature matches, FALSE if it doesn't.
@@ -63,27 +66,42 @@ bool verify_png_signature(std::ifstream* file) {
  * DETERMINE CHUNK TYPE
  *
  * Operates on the first CHUNK_SIZE_BYTES + CHUNK_NAME_BYTES bytes of a chunk to determine the size and name.
- * This must be called in the correct position in the file stream.
+ * This must be called in the correchunk position in the file stream.
  *
  * PARAMS: 
- * std::ifstream* file - Pointer to Input File Stream object from C++ fstream. Requires file to hae already been opened.
- * chunk_type* ct - Pointer to the chunk_type struct where we will store what we find.
+ * std::ifstream* file - Pointer to Input File Stream objechunk from C++ fstream. Requires file to hae already been opened.
+ * chunk_type* chunk - Pointer to the chunk_type struchunk where we will store what we find.
  */
-void determine_chunk_type(std::ifstream* file, chunk_type* ct) {
+void determine_chunk_type(std::ifstream* file, chunk_type* chunk) {
     unsigned char chunk_size_bytes[CHUNK_SIZE_BYTES];
+    unsigned char chunk_name_bytes[CHUNK_NAME_BYTES];
 
     // get size of chunk 
     for(int i = 0; i < CHUNK_SIZE_BYTES; i++) {
         chunk_size_bytes[i] = file->get();
     }
-    ct->size = hex_bytes_to_int(chunk_size_bytes);
+    chunk->size = hex_bytes_to_int(chunk_size_bytes);
 
     // get name of chunk
     for(int i = 0; i < CHUNK_NAME_BYTES; i++) {
-        ct->name[i] = file->get();
+        chunk_name_bytes[i] = file->get();
     }
+    std::string chunk_name((const char*)chunk_name_bytes);
+    chunk->name = chunk_name;
 }
 
+//@PLACEHOLDER: this just iterates through the length of the chunk so that we can test back to back chunk processing 
+void process_chunk(std::ifstream* file, chunk_type* chunk) {
+    //process chunk data
+    for(int i = 0; i < chunk->size; i++) {
+        file->get();
+    }
+
+    //process CRC at end of chunk 
+    for(int i = 0; i < CHUNK_CRC_LENGTH; i++) {
+        file->get();
+    } 
+}
 
 int main(int argc, char** argv) {
 
@@ -101,13 +119,19 @@ int main(int argc, char** argv) {
     if(!verify_png_signature(&file)) {
         std::cout << "Signature Invalid! Not a PNG.\n";
     } else {
-        chunk_type ct;
-        determine_chunk_type(&file, &ct);
-        std::cout << "Length: " << ct.size << '\n';
-        std::cout << "Name: " << ct.name << '\n';
+        chunk_type chunk;
+        while(file.good() && chunk.name != IEND){
+            determine_chunk_type(&file, &chunk);
+            process_chunk(&file, &chunk);
+            std::cout << "Name: \"" << chunk.name << "\"\n";
+            std::cout << "Length: " << chunk.size << '\n';
+            std::cout << "was that IEND? " << (chunk.name == IEND) << '\n';
+        }
+
+        std::cout << "we out\n";
     }
 
-    // TODO: next step is to define structs that hold the chunk data based on type, and populate them.
+    // TODO: next step is to define struchunks that hold the chunk data based on type, and populate them.
     //       once we iterate through all the prefix chunks, and hit the data (IDAT) chunks, we'll decide how to
     //       store the raw encoded bytes for later decoding.
 
@@ -118,7 +142,7 @@ int main(int argc, char** argv) {
 *	- 4 byte CRC info, used to verify chunk validity
 *
 *	so basically this will probably end up looking like some kind of generic 'process chunk'
-*	function that calls the appropriate chunk processing method based on the type. each chunk
+*	funchunkion that calls the appropriate chunk processing method based on the type. each chunk
 *	has completely unique types of data so after determining the chunk length and name, we'll
 *	know how much data to look at and what each byte means based on the spec (wikipedia or whatever)
 *
