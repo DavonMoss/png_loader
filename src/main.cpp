@@ -1,11 +1,14 @@
 #include <iostream>
 #include <fstream>
 
+#include "buffer.h"
+
 static const int CHUNK_SIZE_BYTES = 4;  // number of bytes used to represent the size of a chunk
 static const int CHUNK_NAME_BYTES = 4;  // number of bytes used to represent the name of a chunk
 static const int CHUNK_CRC_LENGTH = 4;  // length of CRC suffix for each chunk
 
 static const std::string IEND = "IEND";
+static const std::string IDAT = "IDAT";
 
 /*
  * Struct to describe the type of chunk we're dealing with.
@@ -103,6 +106,18 @@ void process_chunk(std::ifstream* file, chunk_type* chunk) {
     } 
 }
 
+// extract bytes from IDAT into buffer
+void pull_idat_bytes(std::ifstream* file, chunk_type* chunk, encoded_data_buffer* buffer) {
+    for(int i = 0; i < chunk->size; i++) {
+        buffer->load((unsigned char)file->get());
+    }
+
+    //process CRC at end of chunk 
+    for(int i = 0; i < CHUNK_CRC_LENGTH; i++) {
+        file->get();
+    } 
+}
+
 int main(int argc, char** argv) {
 
     // take filename as input to CLI
@@ -120,16 +135,25 @@ int main(int argc, char** argv) {
         std::cout << "Signature Invalid! Not a PNG.\n";
     } else {
         chunk_type chunk;
+        encoded_data_buffer encoded_bytes;
+
         while(file.good() && chunk.name != IEND){
             determine_chunk_type(&file, &chunk);
-            process_chunk(&file, &chunk);
+
+            if(chunk.name == IDAT) {
+                pull_idat_bytes(&file, &chunk, &encoded_bytes);
+            } else {
+                process_chunk(&file, &chunk);
+            }
+
             std::cout << "Name: \"" << chunk.name << "\"\n";
             std::cout << "Length: " << chunk.size << '\n';
-            std::cout << "was that IEND? " << (chunk.name == IEND) << '\n';
         }
 
-        std::cout << "we out\n";
+        encoded_bytes.print_buffer();
     }
+
+
 
     // TODO: next step is to define struchunks that hold the chunk data based on type, and populate them.
     //       once we iterate through all the prefix chunks, and hit the data (IDAT) chunks, we'll decide how to
