@@ -153,25 +153,26 @@ int main(int argc, char** argv) {
         encoded_bytes.print_buffer();
     }
 
-
-
-    // TODO: next step is to define struchunks that hold the chunk data based on type, and populate them.
-    //       once we iterate through all the prefix chunks, and hit the data (IDAT) chunks, we'll decide how to
-    //       store the raw encoded bytes for later decoding.
-
-    /* after this, we process chunks, chunks are in the following format:
+    /* PNG chunks are in the following format:
 *	- 4 byte size (a number that tells us how many bytes of data are in the chunk, we'll call it 'n'
 *	- 4 byte name (name of the chunk)
 *	- 'n' bytes of data, specific to that type of chunk
 *	- 4 byte CRC info, used to verify chunk validity
 *
-*	so basically this will probably end up looking like some kind of generic 'process chunk'
-*	funchunkion that calls the appropriate chunk processing method based on the type. each chunk
-*	has completely unique types of data so after determining the chunk length and name, we'll
-*	know how much data to look at and what each byte means based on the spec (wikipedia or whatever)
-*
-*	then, once chunks have been processed, and we hit some data chunks, that's when we'll get copy all that encoded
-*	pixel info and decode based on what we found in the previous chunks
+       When we extract and concat all the data bytes from all the PNG's IDAT chunks, that resulting collection of bytes is a zlib stream as such:
+        - 1 byte (CMF) compression method and flags 
+          - bottom 4 bits (0-3)  CM == '8h' (a.k.a 1000) for 'deflate' compression method  
+          - top 4 bits (4-7) CINFO == the base 2 log of the LZ77 window size, minus eight. CINFO=7 means window=32K. 7 is the max possible value.
+        - 1 byte (FLG) additional flags and check bits
+          - bits 0 to 4 FCHECK == 
+          - bit 5 FDICT == indicates whether or not there's a preset dictionary. for a standard PNG, this should always be 0.
+          - bits 6 and 7 FLEVEL == indicates what method the compressor used [0 = fastest, 1 = fast, 2 = default, 3 = maximum compress]. 
+            this is mostly informational, not needed to decode.
+        - n bytes of the compressed data to process, stored in the DEFLATE compressed data format spec
+        - 4 bytes adler-32 checksum
+
+       When we extract the DEFLATE compressed data (RFC 1951), this is the format (really got these bits onioned up good lord)
+         - 
 */
 
 
