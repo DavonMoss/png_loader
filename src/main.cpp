@@ -118,6 +118,34 @@ void pull_idat_bytes(std::ifstream* file, chunk_type* chunk, encoded_data_buffer
     } 
 }
 
+/*
+When we extract and concat all the data bytes from all the PNG's IDAT chunks, that resulting collection of bytes is a zlib stream as such:
+ - 1 byte (CMF) compression method and flags 
+   - bottom 4 bits (0-3)  CM == '8h' (a.k.a 1000) for 'deflate' compression method  
+   - top 4 bits (4-7) CINFO == the base 2 log of the LZ77 window size, minus eight. CINFO=7 means window=32K. 7 is the max possible value.
+ - 1 byte (FLG) additional flags and check bits
+   - bits 0 to 4 FCHECK == 
+   - bit 5 FDICT == indicates whether or not there's a preset dictionary. for a standard PNG, this should always be 0.
+   - bits 6 and 7 FLEVEL == indicates what method the compressor used [0 = fastest, 1 = fast, 2 = default, 3 = maximum compress]. 
+     this is mostly informational, not needed to decode.
+ - n bytes of the compressed data to process, stored in the DEFLATE compressed data format spec
+ - 4 bytes adler-32 checksum
+*/
+// @CLEANUP: so much of this is just fucking psycho please clean it up when you get it working
+void process_IDAT(encoded_data_buffer idat_bytes, encoded_data_buffer* deflate_data) {
+    char cmf = idat_bytes[0];
+    char flg = idat_bytes[1];
+    encoded_data_buffer checksum;
+
+    for(int i = 2; i < idat_bytes.next_free_space - 4; i++) {
+        deflate_data->load(idat_bytes[i]);
+    }
+
+    for(int i = idat_bytes.next_free_space - 4; i < idat_bytes.next_free_space; i++) {
+        checksum.load(idat_bytes[i]);
+    }
+}
+
 int main(int argc, char** argv) {
 
     // take filename as input to CLI
@@ -136,21 +164,32 @@ int main(int argc, char** argv) {
     } else {
         chunk_type chunk;
         encoded_data_buffer encoded_bytes;
+        encoded_data_buffer deflate_data;
 
         while(file.good() && chunk.name != IEND){
             determine_chunk_type(&file, &chunk);
 
+            std::cout << "Name: \"" << chunk.name << "\"\n";
+            std::cout << "Length: " << chunk.size << '\n';
+
+            //@CLEANUP: this is hacky
             if(chunk.name == IDAT) {
                 pull_idat_bytes(&file, &chunk, &encoded_bytes);
+
+		// at this point we have the zlib stream here in the encoded bytes buffer
+                //encoded_bytes.print_buffer();
+
+		// function to parse through zlib headers
+                process_IDAT(encoded_bytes, &deflate_data);	
+                  
+                // and finally here's the data to be decoded
+		// @CLEANUP: I CANNOT EMPHASIZE ENOUGH THIS CANNOT BE THE FINAL WAY WE DO THIS
+		std::cout << "DEFLATE BYTES\n"; 
+		deflate_data.print_buffer();	
             } else {
                 process_chunk(&file, &chunk);
             }
-
-            std::cout << "Name: \"" << chunk.name << "\"\n";
-            std::cout << "Length: " << chunk.size << '\n';
         }
-
-        encoded_bytes.print_buffer();
     }
 
     /* PNG chunks are in the following format:
@@ -172,7 +211,14 @@ int main(int argc, char** argv) {
         - 4 bytes adler-32 checksum
 
        When we extract the DEFLATE compressed data (RFC 1951), this is the format (really got these bits onioned up good lord)
-         - 
+         - header bits, easy shit
+	 - after processing the header bits, and assuming we're not working with an uncompressed block:
+		- data blocks are bitwise, so we're processing a stream of bits
+		- the 'symbols' or 'strings' in this stream are drawn from two different alphabets:
+			- literal bytes + length codes [lit. bytes = 0 - 255, End of Stream = 256, length code = 257 - 285, may have extra bits] 
+			- distance codes [1-32768]
+		- each of these alphabets is encoded with its own huffman tree?
+	 - next question is - how do we process these bits?
 */
 
 

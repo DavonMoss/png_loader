@@ -7,7 +7,7 @@
    in a memory safe way. Can't delete stuff though but do we really need to? We don't wanna ever change this stuff it's just a
    collection of data to read and decode. */
 struct encoded_data_buffer {
-    const int INITIAL_BUFFER_SIZE = 32;		// size we initialize dynamic array to
+    static const int INITIAL_BUFFER_SIZE = 32;	// size we initialize dynamic array to
     int current_buffer_size;			// current size of dynamic array
     int next_free_space;			// index of next free space
     unsigned char* buffer;			// dynamic array
