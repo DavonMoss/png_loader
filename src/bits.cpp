@@ -25,6 +25,7 @@ bit_stream::bit_stream(std::vector<unsigned char> data) {
 void bit_stream::init_buffer() {
     buffer = 0;
     bit_count = 0;
+	distance_to_next_byte = 0;
     load_bytes_into_buffer();
 }
 
@@ -76,6 +77,7 @@ bool bit_stream::get_n_bits(int n, std::uint32_t* bit_buffer) {
         bits = (buffer >> (32 - n));
         buffer = buffer << n;
         bit_count -= n;
+		// calc dist to next byte
 		success = true;
     }
     

@@ -32,7 +32,7 @@ struct zlib_data {
 struct png_data {
 	// likely going to expand to hold tons of chunk header info
 	zlib_data zlib;
-	std::vector<unsigned char> buffer;
+	std::vector<unsigned char> buffer; 	// deflate buffer
 };
 
 
@@ -164,62 +164,126 @@ void parse_zlib(png_data* png) {
 	png->buffer = temp;
 }
 
-//void inflate_data(std::vector<unsigned char> deflate_data) {
-///*
-//note: data is organized in 'blocks' which do not strictly adhere to byte boundaries
-//
-//read bits in from deflate_data
-//- first 3 bits are block header
-//	- first bit 	= BFINAL, 1 if this is last block, 0 if not
-//	- next 2	= BTYPE, data compression type, 00 = none, 01 = fixed huff, 10 = dynamic huff, 11 = error
-//
-//*/
-//    bool bfinal = 0;
-//    bool btype[2] = {0, 0}; // LOL
-//    std::uint16_t len, nlen;
-//    std::queue<unsigned char> uncompressed_bytes;
-//    int distance;
-//    int bsp = 0; // 'byte_stream_position', tracks current byte from deflate stream
-//    int bp = 0; // 'bit_position', tracks current bit in current byte
-//
-//    while(!bfinal) {
-//        bfinal = deflate_data[bsp];
-//        btype = /* next two bits */
-//
-//        if(btype == /*no compression*/) {
-//            /* move input stream to next byte boundary */
-//            len = /* next two bytes */
-//            nlen = /* next two bytes after that */
-//            
-//            for(int i = 0; i < len; i++) {
-//                uncompressed_bytes.push_back(deflate_data[i]);
-//            }
-//        } else {
-//            if(btype == /*dynamic huff*/) {
-//                /*store representation of code trees*/
-//            }
-//
-//            for(;;) {
-//                /*decode literal/length val from deflate_data*/
-//                if(/*that value*/ < 256) {
-//                    uncompressed_bytes.push_back(/*that value a.k.a literal byte*/);
-//                } else {
-//                    if(/*that value*/ == 256) {
-//                        break;
-//                    } else /*implied here that value is from 257..285*/ {
-//                        distance = /*decode distance from deflate_data*/
-//                      
-//                        for(int i = 0; i < /*that value*/; i++) {
-//                            uncompressed_bytes.push_back(uncompressed_bytes[(/*current_pos*/ - distance) + i]);
-//                            /*maybe could do this cleaner by just copying sub string*/
-//                        }  
-//                    }
-//                }
-//            }
-//        }
-//    }
-//
-//}
+void get_huffman_tree(std::uint32_t number_of_codes, std::vector<std::uint32_t> alphabet, std::vector<std::uint32_t> code_lengths) {
+	/*
+	ASSUMPTIONS:
+		- we are constructing the tree for some known alphabet [lit/len = 0 to 285, hclen = that weird ordered shit, etc]
+		- the code lengths input is guaranteed to be the same size as the alphabet it represents
+
+	STEPS:
+		- count the occurrences of each length in 'code_lengths', store them in hashmap 'code_length_counts'. if n is a random length, this means 'code_length_counts[n]' is the number of times it appears
+		- determine the base code of that given length
+			- so for example, if code_length_counts[3] = 2, then we're determining the code for the first symbol encoded with a 3bit code, and then we'll derive the 3bit code for the second symbol later
+	*/
+	std::unordered_map<std::uint32_t, int> code_length_counts;
+	std::vector<std::uint32_t> base_codes;
+	std::uint32_t base_code, max_bits;
+
+	// counting occurrences of each length
+	for(int i = 0; i < code_lengths.size(); i++) {
+		code_length_counts[code_lengths[i]]++;
+	}
+
+	// generating base codes from lengths
+	max_bits = code_length_counts.size() - 1; //idea here is that map size == longest code length + 1
+	base_code = 0;
+	code_length_counts[0] = 0;
+	base_codes.push_back(0);
+	for(int bits = 1; bits <= max_bits; i++) {
+		base_code = (base_code + code_length_counts[bits - 1]) << 1;
+		base_codes.push_back(base_code); //@TODO: there is a problem here, the vector is not initialized to proper size. so we cant just do this.
+	}
+}
+
+void inflate_data(std::vector<unsigned char> deflate_data) {
+/*
+note: data is organized in 'blocks' which do not strictly adhere to byte boundaries
+
+read bits in from deflate_data
+- first 3 bits are block header
+	- first bit 	= BFINAL, 1 if this is last block, 0 if not
+	- next 2	= BTYPE, data compression type, 00 = none, 01 = fixed huff, 10 = dynamic huff, 11 = error
+
+*/
+	enum BTYPE {
+		NONE = 0,
+		FIXED_HUFF = 1,
+		DYN_HUFF = 2,
+		ERROR = 3
+	};
+
+	// convert vector to a bit_stream so i can do stuff with bits
+	bit_stream bits(deflate_data);
+	std::uint32_t bit_buff, bfinal = 0, btype, len, nlen;
+	std::vector<unsigned char> uncompressed_bytes;
+	std::uint32_t hlit, hdist, hclen;
+
+    while(bfinal) {
+		/* processing header */
+        bits.get_n_bits(1, &bfinal);	// get 1 bit from data
+        bits.get_n_bits(2, &btype);		// get 2 bits from data
+
+        if(btype == BTYPE::NONE) {
+            /* move input stream to next byte boundary */
+			bits.get_n_bits((bits.bit_count % 8), &bit_buff);
+
+			/* grab len and nlen values*/
+            bits.get_n_bits(16, &len);
+            bits.get_n_bits(16, &nlen);
+           
+		   	/* just read the next 'len' bytes as char literals */
+            for(int i = 0; i < len; i++) {
+				bits.get_n_bits(8, &bit_buff)
+                uncompressed_bytes.push_back((unsigned char)bit_buff);
+            }
+        } else {
+            if(btype == BTYPE::DYN_HUFF) {
+                /*@ TODO: store representation of code trees */
+				/*
+					Structure of block with dynamic huffman coding
+					[3 bits] header
+					[5 bits] hlit: this is the number of codes in the lit/len alphabet, minus 257. so we store this number and add 257 to it later to get the whole count
+					[5 bits] hdist: this is the number of codes in the distance alphabet, minus 1. same idea as above
+					[4 bits] hclen: this is the number of codes in the tree that encodes the two trees above, minus 4. same idea
+					[(hclen + 4) x 3 bits] this is the actual AHHAHAHJSIKJDHAJKSHFAJIKSFGBAJIKSFB
+					[hlit + 257 bits] the actual code lengths for the lit/len alphabet, but compressed using the hclen code
+					[hdist + 1 bits] the actual code lengths for the distance alphabet, but compressed using the hclen code
+					[n bits] the actual compressed data, encoded using the hdist and hlit codes
+					[? bits] the symbol 256, encoded using the hlit code
+				*/
+				struct deflate_block {
+					std::uint32_t hlit, hdist, hclen;
+				};
+
+				bits.get_n_bits(5, &hlit);
+				bits.get_n_bits(5, &hdist);
+				bits.get_n_bits(4, &hclen);
+
+				hlit += 257;
+				hdist += 1;
+				hclen += 4;
+            }
+
+            for(;;) {
+                /*decode literal/length val from deflate_data*/
+                if(/*that value*/ < 256) {
+                    uncompressed_bytes.push_back(/*that value a.k.a literal byte*/);
+                } else {
+                    if(/*that value*/ == 256) {
+                        break;
+                    } else /*implied here that value is from 257..285*/ {
+                        distance = /*decode distance from deflate_data*/
+                      
+                        for(int i = 0; i < /*that value*/; i++) {
+                            uncompressed_bytes.push_back(uncompressed_bytes[(/*current_pos*/ - distance) + i]);
+                            /*maybe could do this cleaner by just copying sub string*/
+                        }  
+                    }
+                }
+            }
+        }
+    }
+}
 
 int main(int argc, char** argv) {
     if (argc != 2) {

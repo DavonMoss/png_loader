@@ -6,9 +6,9 @@
 #include <vector>
 
 struct bit_stream {
-    std::queue<unsigned char> bytes;
-    std::uint32_t buffer;
-    int bit_count;
+    std::queue<unsigned char> bytes;		// actual bytes we read from
+    std::uint32_t buffer;					// buffer we load bits into
+    int bit_count;							// count of valid bits in the buffer, all bits are left justified (EX: [bit_count amount of bits][32 - bit_count amount of trash])
 
     bit_stream();
     bit_stream(std::queue<unsigned char>);
